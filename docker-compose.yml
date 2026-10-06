@@ -2,8 +2,8 @@ services:
   ollama:
     image: ollama/ollama@sha256:1bef639749741b375e9a1eb2c1346fb57ce52f5432de1f74846e44ccc18e1687
     environment:
-      NO_PROXY: "localhost,127.0.0.1,0.0.0.0,::1"
-      no_proxy: "localhost,127.0.0.1,0.0.0.0,::1"
+      NO_PROXY: "localhost,127.0.0.1,0.0.0.0,::1,ollama"
+      no_proxy: "localhost,127.0.0.1,0.0.0.0,::1,ollama"
     ports:
       - "127.0.0.1:11434:11434"
     volumes:
@@ -14,6 +14,54 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
+    restart: unless-stopped
+
+  ollama-init:
+    image: curlimages/curl:8.18.0@sha256:d94d07ba9e7d6de898b6d96c1a072f6f8266c687af78a74f380087a0addf5d17
+    environment:
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      NO_PROXY: "localhost,127.0.0.1,::1,ollama"
+      no_proxy: "localhost,127.0.0.1,::1,ollama"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        case "$$OLLAMA_MODEL" in
+          ''|*[!a-zA-Z0-9._:/-]*) echo "Invalid OLLAMA_MODEL" >&2; exit 1 ;;
+        esac
+        response=$$(curl --fail --silent --show-error --connect-timeout 10 \
+          http://ollama:11434/api/pull \
+          -H 'Content-Type: application/json' \
+          --data "{\"model\":\"$$OLLAMA_MODEL\",\"stream\":false}")
+        printf '%s' "$$response" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"'
+        echo "Model $$OLLAMA_MODEL ready"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      SERVER_PORT: "8080"
+      NO_PROXY: "localhost,127.0.0.1,::1,ollama"
+      no_proxy: "localhost,127.0.0.1,::1,ollama"
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-8080}:8080"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
 
 volumes:
   ollama-data:
