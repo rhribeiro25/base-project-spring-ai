@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: base-project-spring-ai
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      init:
+        pull-model-strategy: never
+      chat:
+        options:
+          model: ${OLLAMA_MODEL:qwen3:4b}
+          temperature: 0.2
+    retry:
+      max-attempts: 1
+  http:
+    client:
+      connect-timeout: 5s
+      read-timeout: 120s
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
